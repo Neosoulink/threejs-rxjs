@@ -1,4 +1,12 @@
-import { filter, fromEvent, map, merge, withLatestFrom } from "rxjs";
+import {
+	filter,
+	fromEvent,
+	map,
+	merge,
+	switchMap,
+	takeUntil,
+	withLatestFrom,
+} from "rxjs";
 import {
 	BoxGeometry,
 	Mesh,
@@ -7,6 +15,7 @@ import {
 	Raycaster,
 	Scene,
 	Vector2,
+	Vector3,
 	WebGLRenderer,
 } from "three";
 
@@ -73,8 +82,11 @@ fromEvent<UIEvent>(window, "resize").subscribe(() => {
 	camera.updateProjectionMatrix();
 });
 
-const cubeClicked$ = fromEvent<MouseEvent>(window, "mousedown").pipe(
-	filter((e) => e.target === canvas),
+const pointerdown$ = fromEvent<MouseEvent>(window, "pointerdown").pipe(
+	filter((e) => e.target === canvas)
+);
+const pointerup$ = fromEvent<MouseEvent>(window, "pointerup");
+const cubeClicked$ = pointerdown$.pipe(
 	map((e) => {
 		pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
 		pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
@@ -93,22 +105,34 @@ const cubeClicked$ = fromEvent<MouseEvent>(window, "mousedown").pipe(
 				list.push(currentMats.material);
 		}
 
-		return { type: e.type as "mousedown", list };
+		return { type: e.type as "pointerdown", list };
 	})
 );
 
+pointerdown$
+	.pipe(
+		switchMap(() =>
+			fromEvent<MouseEvent>(canvas, "pointermove").pipe(takeUntil(pointerup$))
+		)
+	)
+	.subscribe((e) => {
+		camera.position.x = Math.sin(camera.position.x + e.clientX * 0.5) * 5;
+		camera.position.z = Math.cos(camera.position.x - e.clientX * 0.5) * 5;
+		camera.lookAt(new Vector3());
+	});
+
 merge(
 	cubeClicked$,
-	fromEvent<MouseEvent>(window, "mouseup").pipe(
+	pointerup$.pipe(
 		withLatestFrom(cubeClicked$),
 		map(([e, prev]) => ({
 			...prev,
-			type: e.type as "mouseup",
+			type: e.type as "pointerup",
 		}))
 	)
 ).subscribe((value) => {
-	if (value.type === "mousedown")
+	if (value.type === "pointerdown")
 		value.list.map((mat) => mat.color.set(0xff0000));
-	if (value.type === "mouseup")
+	if (value.type === "pointerup")
 		value.list.map((mat) => mat.color.set(0x00ff00));
 });
